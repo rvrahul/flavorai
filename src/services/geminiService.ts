@@ -84,7 +84,7 @@ export async function generateRecipes(ingredients: string[], mealType?: string):
     return recipes.map((r: any, index: number) => ({
       ...r,
       id: r.id || `recipe-${Date.now()}-${index}`,
-      imageUrl: r.imageUrl || `https://loremflickr.com/800/600/food,dish,${encodeURIComponent(r.title.split(' ').slice(0, 2).join(','))}`
+      imageUrl: r.imageUrl || `https://loremflickr.com/800/600/recipe,food,cooked,${encodeURIComponent(r.title.split(' ').slice(0, 3).join(','))}`
     }));
   } catch (e) {
     console.error("Failed to parse recipes", e);
@@ -151,7 +151,7 @@ export async function getHotPicks(): Promise<Recipe[]> {
     const recipes = JSON.parse(response.text || "[]");
     return recipes.map((r: any, index: number) => ({
       ...r,
-      imageUrl: r.imageUrl || `https://loremflickr.com/800/600/food,dish,${encodeURIComponent(r.title.split(' ').slice(0, 2).join(','))}`
+      imageUrl: r.imageUrl || `https://loremflickr.com/800/600/recipe,food,cooked,${encodeURIComponent(r.title.split(' ').slice(0, 3).join(','))}`
     }));
   } catch (e) {
     return [];
@@ -159,9 +159,10 @@ export async function getHotPicks(): Promise<Recipe[]> {
 }
 
 export async function suggestMealPlan(pantryItems: string[]) {
+  const today = new Date().toLocaleDateString('en-CA');
   const prompt = `Based on these pantry items: ${pantryItems.join(', ')}, suggest a 7-day meal plan (Breakfast, Lunch, Dinner). 
-  Return as a JSON array of objects with fields: date (YYYY-MM-DD), mealType (Breakfast, Lunch, Dinner), recipeTitle.
-  Start from today: ${new Date().toISOString().split('T')[0]}.`;
+  Return as a JSON array of objects with fields: date (YYYY-MM-DD), mealType (Breakfast, Lunch, Dinner), recipeTitle, calories (number), macros (object with protein, carbs, fat as numbers).
+  Start from today: ${today}.`;
 
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
@@ -175,9 +176,18 @@ export async function suggestMealPlan(pantryItems: string[]) {
           properties: {
             date: { type: Type.STRING },
             mealType: { type: Type.STRING },
-            recipeTitle: { type: Type.STRING }
+            recipeTitle: { type: Type.STRING },
+            calories: { type: Type.NUMBER },
+            macros: {
+              type: Type.OBJECT,
+              properties: {
+                protein: { type: Type.NUMBER },
+                carbs: { type: Type.NUMBER },
+                fat: { type: Type.NUMBER }
+              }
+            }
           },
-          required: ["date", "mealType", "recipeTitle"]
+          required: ["date", "mealType", "recipeTitle", "calories", "macros"]
         }
       }
     }

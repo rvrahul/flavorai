@@ -56,9 +56,23 @@ export default function Home({
   const mealTypes = ['All', 'Breakfast', 'Snack', 'Lunch', 'Dinner', 'Dessert'];
 
   const commonIngredients = [
-    'Tomato', 'Potato', 'Onion', 'Garlic', 'Ginger', 'Chicken', 'Egg', 'Milk', 
-    'Cheese', 'Butter', 'Flour', 'Rice', 'Pasta', 'Carrot', 'Spinach', 'Mushroom',
-    'Lemon', 'Honey', 'Olive Oil', 'Bread', 'Coriander', 'Chili', 'Salt', 'Sugar'
+    // Vegetables
+    'Tomato', 'Potato', 'Onion', 'Garlic', 'Ginger', 'Carrot', 'Spinach', 'Mushroom', 
+    'Cauliflower', 'Cabbage', 'Broccoli', 'Bell Pepper', 'Cucumber', 'Eggplant', 
+    'Green Peas', 'Okra', 'Zucchini', 'Sweet Potato', 'Radish', 'Pumpkin',
+    // Spices & Herbs
+    'Garam Masala', 'Turmeric', 'Cumin Seeds', 'Coriander Powder', 'Red Chili Powder',
+    'Black Pepper', 'Cinnamon', 'Cardamom', 'Cloves', 'Bay Leaf', 'Mustard Seeds',
+    'Fenugreek', 'Asafoetida', 'Coriander Leaves', 'Mint Leaves', 'Curry Leaves',
+    // Grains & Legumes
+    'Rice', 'Wheat Flour', 'Maida', 'Basmati Rice', 'Lentils', 'Chickpeas', 
+    'Kidney Beans', 'Moong Dal', 'Toor Dal', 'Oats', 'Quinoa', 'Pasta', 'Noodles',
+    // Dairy & Proteins
+    'Milk', 'Paneer', 'Tofu', 'Chicken', 'Egg', 'Fish', 'Mutton', 'Prawns',
+    'Cheese', 'Butter', 'Ghee', 'Yogurt', 'Cream',
+    // Pantry Essentials
+    'Olive Oil', 'Vegetable Oil', 'Mustard Oil', 'Salt', 'Sugar', 'Honey', 
+    'Lemon', 'Vinegar', 'Soy Sauce', 'Bread', 'Baking Powder', 'Yeast'
   ];
 
   useEffect(() => {
@@ -183,7 +197,7 @@ export default function Home({
               <label className="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 cursor-pointer transition-all shadow-lg shadow-orange-200 active:scale-95">
                 <Upload size={20} />
                 <span>Upload Photo</span>
-                <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
+                <input type="file" className="hidden" accept="image/*" capture="environment" onChange={handleFileUpload} />
               </label>
             </div>
 

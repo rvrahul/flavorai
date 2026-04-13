@@ -5,9 +5,10 @@ import { BookOpen, Package, Calendar, ShoppingCart, LogIn, Loader2, Trash2, Chec
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from './hooks/useAuth';
 import { db, handleFirestoreError, OperationType } from './firebase';
-import { collection, onSnapshot, query, addDoc, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, addDoc, deleteDoc, doc, updateDoc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { Recipe, PantryItem, MealPlanEntry, ShoppingListItem, UserGoals } from './types';
 import RecipeCard from './components/RecipeCard';
+import RecipeDetails from './components/RecipeDetails';
 import { cn } from './lib/utils';
 import { suggestMealPlan } from './services/geminiService';
 import { getDocs } from 'firebase/firestore';
@@ -139,16 +140,20 @@ const MealPlan = ({
   favorites, 
   recipes, 
   hotPicks, 
-  userGoals 
+  userGoals,
+  onRecipeClick
 }: { 
   plans: MealPlanEntry[], 
   favorites: Recipe[], 
   recipes: Recipe[], 
   hotPicks: Recipe[], 
-  userGoals: UserGoals 
+  userGoals: UserGoals,
+  onRecipeClick: (recipe: Recipe) => void
 }) => {
   const { user } = useAuth();
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [trackerDate, setTrackerDate] = useState(new Date().toLocaleDateString('en-CA'));
 
   const removePlan = async (id: string) => {
     if (!user) return;
@@ -157,6 +162,25 @@ const MealPlan = ({
       await deleteDoc(doc(db, path));
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  };
+
+  const clearAllPlans = async () => {
+    if (!user || plans.length === 0) return;
+    if (!window.confirm("Are you sure you want to clear your entire meal plan?")) return;
+    
+    setIsClearing(true);
+    try {
+      const batch = writeBatch(db);
+      plans.forEach((plan) => {
+        const docRef = doc(db, `users/${user.uid}/mealPlan/${plan.id}`);
+        batch.delete(docRef);
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error("Failed to clear meal plan", error);
+    } finally {
+      setIsClearing(false);
     }
   };
 
@@ -172,14 +196,17 @@ const MealPlan = ({
       const suggestions = await suggestMealPlan(pantryItems);
       
       // Batch add suggestions
+      const batch = writeBatch(db);
       const mealPlanPath = `users/${user.uid}/mealPlan`;
-      for (const suggestion of suggestions) {
-        await addDoc(collection(db, mealPlanPath), {
+      suggestions.forEach((suggestion: any) => {
+        const docRef = doc(collection(db, mealPlanPath));
+        batch.set(docRef, {
           ...suggestion,
           uid: user.uid,
           createdAt: new Date().toISOString()
         });
-      }
+      });
+      await batch.commit();
     } catch (error) {
       console.error(error);
     } finally {
@@ -196,19 +223,27 @@ const MealPlan = ({
   const sortedDates = Object.keys(groupedPlans).sort();
 
   // Calculate Daily Totals for Nutritional Tracking
-  const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD local
-  const todaysMeals = groupedPlans[today] || [];
-  const dailyTotals = todaysMeals.reduce((acc, plan) => {
-    // Search in all possible recipe sources
+  const selectedMeals = groupedPlans[trackerDate] || [];
+  const dailyTotals = selectedMeals.reduce((acc, plan) => {
+    // 1. Use macros stored directly on the plan entry (preferred for AI suggestions)
+    if (plan.calories !== undefined && plan.macros) {
+      acc.calories += plan.calories || 0;
+      acc.protein += plan.macros.protein || 0;
+      acc.carbs += plan.macros.carbs || 0;
+      acc.fat += plan.macros.fat || 0;
+      return acc;
+    }
+
+    // 2. Fallback: Search in all possible recipe sources
     const recipe = favorites.find(f => f.id === plan.recipeId || f.title === plan.recipeTitle) ||
                    recipes.find(r => r.id === plan.recipeId || r.title === plan.recipeTitle) ||
                    hotPicks.find(h => h.id === plan.recipeId || h.title === plan.recipeTitle);
     
     if (recipe) {
-      acc.calories += recipe.calories;
-      acc.protein += recipe.macros.protein;
-      acc.carbs += recipe.macros.carbs;
-      acc.fat += recipe.macros.fat;
+      acc.calories += recipe.calories || 0;
+      acc.protein += recipe.macros?.protein || 0;
+      acc.carbs += recipe.macros?.carbs || 0;
+      acc.fat += recipe.macros?.fat || 0;
     }
     return acc;
   }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
@@ -220,25 +255,48 @@ const MealPlan = ({
           <h2 className="text-3xl font-bold text-stone-900">Weekly Meal Plan</h2>
           <p className="text-stone-500">Organize your cooking for the week ahead</p>
         </div>
-        <button 
-          onClick={handleAISuggest}
-          disabled={isSuggesting}
-          className="bg-orange-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-orange-100 hover:bg-orange-600 transition-all flex items-center gap-2 disabled:opacity-50"
-        >
-          {isSuggesting ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={20} />}
-          AI Suggest Week
-        </button>
+        <div className="flex items-center gap-3">
+          {plans.length > 0 && (
+            <button 
+              onClick={clearAllPlans}
+              disabled={isClearing}
+              className="text-stone-400 hover:text-red-500 px-4 py-3 rounded-xl font-bold transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              {isClearing ? <RefreshCw className="animate-spin" size={18} /> : <Trash2 size={18} />}
+              Clear All
+            </button>
+          )}
+          <button 
+            onClick={handleAISuggest}
+            disabled={isSuggesting}
+            className="bg-orange-500 text-white px-6 py-3 rounded-xl font-bold shadow-lg shadow-orange-100 hover:bg-orange-600 transition-all flex items-center gap-2 disabled:opacity-50"
+          >
+            {isSuggesting ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={20} />}
+            AI Suggest Week
+          </button>
+        </div>
       </div>
 
       {/* Nutritional Tracking Dashboard */}
       <div className="bg-stone-900 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-stone-200">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-          <div className="space-y-2">
-            <h3 className="text-2xl font-bold">Daily Nutrition Tracker</h3>
-            <p className="text-stone-400">Tracking progress for <span className="text-orange-400 font-bold">Today</span></p>
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <h3 className="text-2xl font-bold">Daily Nutrition Tracker</h3>
+              <p className="text-stone-400">Tracking progress for <span className="text-orange-400 font-bold">{trackerDate === new Date().toLocaleDateString('en-CA') ? 'Today' : trackerDate}</span></p>
+            </div>
+            <div className="flex items-center gap-2 bg-stone-800 p-2 rounded-xl">
+              <Calendar size={16} className="text-stone-400" />
+              <input 
+                type="date" 
+                value={trackerDate}
+                onChange={(e) => setTrackerDate(e.target.value)}
+                className="bg-transparent text-sm font-bold outline-none cursor-pointer"
+              />
+            </div>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 w-full md:w-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 w-full lg:w-auto">
             {[
               { label: 'Calories', current: dailyTotals.calories, goal: userGoals.calories, unit: 'kcal', color: 'bg-orange-500' },
               { label: 'Protein', current: dailyTotals.protein, goal: userGoals.protein, unit: 'g', color: 'bg-blue-500' },
@@ -279,6 +337,12 @@ const MealPlan = ({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {['Breakfast', 'Lunch', 'Dinner', 'Snack'].map(type => {
                 const plan = groupedPlans[date].find(p => p.mealType.toLowerCase() === type.toLowerCase());
+                const recipe = plan ? (
+                  favorites.find(f => f.id === plan.recipeId || f.title === plan.recipeTitle) ||
+                  recipes.find(r => r.id === plan.recipeId || r.title === plan.recipeTitle) ||
+                  hotPicks.find(h => h.id === plan.recipeId || h.title === plan.recipeTitle)
+                ) : null;
+
                 return (
                   <div key={type} className={cn(
                     "p-5 rounded-3xl border transition-all",
@@ -287,10 +351,18 @@ const MealPlan = ({
                     <div className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-2">{type}</div>
                     {plan ? (
                       <div className="flex items-start justify-between gap-2">
-                        <h4 className="font-bold text-stone-900 leading-tight">{plan.recipeTitle}</h4>
+                        <div 
+                          className="flex-1 cursor-pointer group/title"
+                          onClick={() => recipe && onRecipeClick(recipe)}
+                        >
+                          <h4 className="font-bold text-stone-900 leading-tight group-hover/title:text-orange-500 transition-colors">
+                            {plan.recipeTitle}
+                          </h4>
+                          {recipe && <p className="text-[10px] text-orange-500 font-bold mt-1 opacity-0 group-hover/title:opacity-100 transition-opacity">View Recipe →</p>}
+                        </div>
                         <button 
                           onClick={() => removePlan(plan.id)}
-                          className="text-stone-300 hover:text-red-500 transition-colors"
+                          className="text-stone-300 hover:text-red-500 transition-colors shrink-0"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -528,6 +600,8 @@ export default function App() {
     }
   };
 
+  const [selectedRecipeForPlan, setSelectedRecipeForPlan] = useState<Recipe | null>(null);
+
   const renderPage = () => {
     if (!user) {
       return (
@@ -569,13 +643,29 @@ export default function App() {
       case 'recipes': return <MyRecipes favorites={favorites} toggleFavorite={toggleFavorite} />;
       case 'pantry': return <Pantry items={pantryItems} user={user} />;
       case 'mealplan': return (
-        <MealPlan 
-          plans={mealPlans} 
-          favorites={favorites} 
-          recipes={recipes} 
-          hotPicks={hotPicks} 
-          userGoals={userGoals} 
-        />
+        <>
+          <MealPlan 
+            plans={mealPlans} 
+            favorites={favorites} 
+            recipes={recipes} 
+            hotPicks={hotPicks} 
+            userGoals={userGoals} 
+            onRecipeClick={(recipe) => setSelectedRecipeForPlan(recipe)}
+          />
+          <AnimatePresence>
+            {selectedRecipeForPlan && (
+              <RecipeDetails 
+                recipe={selectedRecipeForPlan} 
+                onClose={() => setSelectedRecipeForPlan(null)} 
+                isFavorite={favorites.some(f => f.title === selectedRecipeForPlan.title)}
+                onFavorite={() => toggleFavorite(selectedRecipeForPlan)}
+                userIngredients={ingredients}
+                onAddToShoppingList={handleAddToShoppingList}
+                onFinishCooking={handleFinishCooking}
+              />
+            )}
+          </AnimatePresence>
+        </>
       );
       case 'shopping': return <ShoppingList items={shoppingList} user={user} />;
       default: return <Home 

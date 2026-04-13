@@ -90,6 +90,8 @@ export default function RecipeDetails({
         recipeTitle: recipe.title,
         date: saveDate,
         mealType: saveMealType,
+        calories: recipe.calories,
+        macros: recipe.macros,
         uid: user.uid,
         createdAt: new Date().toISOString()
       });

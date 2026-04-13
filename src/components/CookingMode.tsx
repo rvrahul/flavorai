@@ -22,10 +22,16 @@ interface CookingModeProps {
 
 export default function CookingMode({ recipe, onClose, onFinish }: CookingModeProps) {
   const [currentStep, setCurrentStep] = useState(0);
+  const stepRef = React.useRef(0);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [recognition, setRecognition] = useState<any>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+
+  // Sync ref with state
+  useEffect(() => {
+    stepRef.current = currentStep;
+  }, [currentStep]);
 
   const speakStep = useCallback((index: number) => {
     window.speechSynthesis.cancel();
@@ -50,11 +56,19 @@ export default function CookingMode({ recipe, onClose, onFinish }: CookingModePr
           console.log('Voice command:', command);
           
           if (command.includes('next')) {
-            handleNext();
+            setCurrentStep(prev => {
+              const next = Math.min(prev + 1, recipe.instructions.length - 1);
+              if (next !== prev) speakStep(next);
+              return next;
+            });
           } else if (command.includes('previous') || command.includes('back')) {
-            handlePrev();
+            setCurrentStep(prev => {
+              const next = Math.max(prev - 1, 0);
+              if (next !== prev) speakStep(next);
+              return next;
+            });
           } else if (command.includes('repeat') || command.includes('read')) {
-            speakStep(currentStep);
+            speakStep(stepRef.current);
           } else if (command.includes('stop') || command.includes('finish')) {
             onClose();
           }
@@ -91,7 +105,7 @@ export default function CookingMode({ recipe, onClose, onFinish }: CookingModePr
         } catch (e) {}
       }
     };
-  }, [currentStep, speakStep, onClose]);
+  }, [recipe.instructions.length, speakStep, onClose]); // Removed currentStep from deps
 
   const toggleListening = () => {
     if (!recognition) return;

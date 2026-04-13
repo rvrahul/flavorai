@@ -41,6 +41,12 @@ export interface MealPlanEntry {
   recipeTitle: string;
   date: string;
   mealType: MealType;
+  calories?: number;
+  macros?: {
+    protein: number;
+    carbs: number;
+    fat: number;
+  };
 }
 
 export interface ShoppingListItem {
